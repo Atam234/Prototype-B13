@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>ZeroInstall Relay</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #ffffff; --text: #111a2e; --muted: #5b6478; --border: #dde2ee;
+    --primary: #1e5eff; --primary-text: #ffffff;
+    --ok: #1b8a3a; --ok-bg: #e5f5ea; --warn: #9a5b00; --warn-bg: #fff3dc;
+    --err: #b3261e; --err-bg: #fde7e5; --info: #1e4fbf; --info-bg: #e7eeff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1220; --card: #161d30; --text: #e7ebf5; --muted: #9aa3b8; --border: #26304a;
+      --primary: #8fb0ff; --primary-text: #0d1220;
+      --ok: #7fdc98; --ok-bg: #12301d; --warn: #ffc56b; --warn-bg: #352610;
+      --err: #ffb4ab; --err-bg: #3b1513; --info: #b3c5ff; --info-bg: #17254a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px calc(32px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 1.5rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  p { margin: 0 0 8px; }
+  .lead { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-top: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; margin-bottom: 12px; }
+  .stats div { background: var(--bg); border-radius: 10px; padding: 8px 4px; }
+  .stats b { display: block; font-size: 1.6rem; line-height: 1.1; }
+  .stats span { font-size: .8rem; color: var(--muted); }
+  .banner { border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-weight: 500; }
+  .banner.info { background: var(--info-bg); color: var(--info); }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); }
+  .banner.error { background: var(--err-bg); color: var(--err); }
+  .row { display: flex; gap: 8px; }
+  button { font: inherit; font-weight: 600; border-radius: 10px; border: 0; padding: 12px 14px; cursor: pointer; }
+  button.primary { background: var(--primary); color: var(--primary-text); flex: 1; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: .55; cursor: progress; }
+  .meta { font-size: .85rem; color: var(--muted); margin-top: 10px; word-break: break-all; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+  ul.msgs { list-style: none; margin: 0; padding: 0; }
+  ul.msgs li { border-top: 1px solid var(--border); padding: 10px 0; }
+  ul.msgs li:first-child { border-top: 0; }
+  .msg-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .pill { font-size: .75rem; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .pill.fetched { background: var(--warn-bg); color: var(--warn); }
+  .pill.uploaded { background: var(--info-bg); color: var(--info); }
+  .small { font-size: .82rem; color: var(--muted); }
+  .small.err { color: var(--err); }
+  ol.log { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto;
+    font: .8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  ol.log li { padding: 3px 0; border-bottom: 1px dashed var(--border); word-break: break-word; }
+  ol.log li.ok { color: var(--ok); }
+  ol.log li.warn { color: var(--warn); }
+  ol.log li.error { color: var(--err); }
+  .help ol { margin: 0; padding-left: 20px; }
+  .help li { margin-bottom: 6px; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <h1>ZeroInstall Relay</h1>
+  <p class="lead">A nearby phone without signal has encrypted messages waiting. This page forwards them to the cloud
+    using <b>your</b> internet connection. Nothing is installed and you cannot read the messages — they are end-to-end encrypted.</p>
+
+  <section class="card" aria-live="polite">
+    <div class="stats">
+      <div><b id="stat-waiting">0</b><span>To upload</span></div>
+      <div><b id="stat-uploaded">0</b><span>Awaiting confirm</span></div>
+      <div><b id="stat-done">0</b><span>Delivered</span></div>
+    </div>
+    <div id="banner" class="banner info">Starting relay…</div>
+    <div class="row">
+      <button id="retry" class="primary" type="button">Retry Relay</button>
+      <button id="clear" class="secondary" type="button">Clear cache</button>
+    </div>
+    <p class="meta">Cloud endpoint: <code id="endpoint">(loading)</code></p>
+    <p class="meta">Sender: <span id="sender-status">checking…</span> · Internet: <span id="net-status">untested</span></p>
+  </section>
+
+  <section class="card">
+    <h2>Messages on this page</h2>
+    <ul id="messages" class="msgs"></ul>
+    <p id="no-messages" class="small">No messages cached.</p>
+  </section>
+
+  <section class="card">
+    <h2>Transfer log</h2>
+    <ol id="log" class="log"></ol>
+  </section>
+
+  <section class="card help">
+    <h2>Upload not going through?</h2>
+    <ol>
+      <li>Keep this tab open — messages are cached on this page, so you can switch networks safely.</li>
+      <li>If uploads fail with a network error, your phone is sending everything over the sender's Wi-Fi
+        (which has no internet). Turn <b>Wi-Fi off</b>, make sure <b>mobile data is on</b>, then tap <b>Retry Relay</b>.</li>
+      <li>After the upload succeeds, turn Wi-Fi back on, rejoin the sender's hotspot and tap <b>Retry Relay</b>
+        so the sender's phone learns the message was delivered.</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // Injected by the sender's local server for this relay session.
+  var TOKEN = '__RELAY_TOKEN__';
+  var STORAGE_KEY = 'zir.relay.v1';
+  var SENDER_TIMEOUT_MS = 5000;
+  var CLOUD_TIMEOUT_MS = 20000;
+  var RETRY_BUSY_MS = 8000;     // while messages are outstanding
+  var RETRY_IDLE_MS = 15000;    // watching for new messages
+  var MAX_AUTO_CYCLES = 240;    // roughly an hour, then manual Retry only
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var senderReachable = null;   // null = unknown
+  var internetReachable = null;
+  var running = false;
+  var autoCycles = 0;
+  var autoTimer = null;
+  var sessionExpired = false;
+
+  function freshState() { return { cloudEndpoint: null, items: {}, deliveredCount: 0 }; }
+
+  function loadState() {
+    try {
+      var s = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (s && typeof s === 'object' && s.items && typeof s.items === 'object') {
+        s.deliveredCount = s.deliveredCount || 0;
+        return s;
+      }
+    } catch (e) { /* corrupted or unavailable storage: start fresh */ }
+    return freshState();
+  }
+
+  var state = loadState();
+
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch (e) { log('warn', 'Could not cache messages on this page: ' + e.message); }
+  }
+
+  function log(level, text) {
+    var li = document.createElement('li');
+    li.className = level;
+    li.textContent = '[' + new Date().toLocaleTimeString() + '] ' + text;
+    var list = $('log');
+    list.insertBefore(li, list.firstChild);
+    while (list.children.length > 150) list.removeChild(list.lastChild);
+  }
+
+  function shortId(id) { return String(id).slice(0, 8); }
+
+  function hostOf(url) {
+    try { return new URL(url).host; } catch (e) { return url; }
+  }
+
+  function describe(err) {
+    if (err && err.name === 'AbortError') return 'timed out';
+    return (err && err.message) ? err.message : String(err);
+  }
+
+  function fetchWithTimeout(url, options, ms) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, ms);
+    var opts = Object.assign({}, options, { signal: ctrl.signal, cache: 'no-store' });
+    return fetch(url, opts).finally(function () { clearTimeout(timer); });
+  }
+
+  function senderRequest(path, method, body) {
+    var opts = { method: method, headers: { 'X-Relay-Token': TOKEN }, credentials: 'same-origin' };
+    if (body !== undefined) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    return fetchWithTimeout(path, opts, SENDER_TIMEOUT_MS);
+  }
+
+  function itemsIn(phase) {
+    return Object.keys(state.items)
+      .map(function (k) { return state.items[k]; })
+      .filter(function (it) { return it.phase === phase; })
+      .sort(function (a, b) { return a.message.createdAt - b.message.createdAt; });
+  }
+
+  // Step 1: GET /api/pending from the sender (over the hotspot Wi-Fi).
+  async function pullFromSender() {
+    try {
+      var res = await senderRequest('/api/pending', 'GET');
+      senderReachable = true;
+      if (res.status === 401) {
+        sessionExpired = true;
+        log('error', 'Relay session expired (the sender restarted). Reload this page while connected to its Wi-Fi.');
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      if (data.cloudEndpoint) state.cloudEndpoint = data.cloudEndpoint;
+      var added = 0;
+      (data.messages || []).forEach(function (m) {
+        if (!m || !m.id || state.items[m.id]) return;
+        state.items[m.id] = { message: m, phase: 'fetched', attempts: 0, lastError: null, cloudStatus: null };
+        added++;
+      });
+      save();
+      log('ok', 'Sender reachable: ' + data.count + ' message(s) waiting' + (added ? ', ' + added + ' new.' : '.'));
+    } catch (e) {
+      senderReachable = false;
+      log('warn', 'Sender not reachable (' + describe(e) + '). Working from cached messages.');
+    }
+  }
+
+  function cloudBody(m) {
+    return {
+      relay: 'ZeroInstallRelay',
+      version: 1,
+      channel: 'helper-browser',
+      idempotencyKey: m.id,
+      relayedAt: Date.now(),
+      message: {
+        id: m.id,
+        recipientId: m.recipientId,
+        encryptedPayload: m.encryptedPayload,
+        encryptionScheme: m.encryptionScheme,
+        createdAt: m.createdAt
+      }
+    };
+  }
+
+  // Step 2: POST the encrypted payload to the cloud using this phone's internet.
+  async function uploadToCloud(item) {
+    var endpoint = state.cloudEndpoint;
+    if (!endpoint) {
+      log('error', 'No cloud endpoint known yet — connect to the sender\'s Wi-Fi and retry.');
+      return;
+    }
+    var id = item.message.id;
+    item.attempts++;
+    log('info', 'Uploading ' + shortId(id) + ' to ' + hostOf(endpoint) + ' (attempt ' + item.attempts + ')…');
+    try {
+      var res = await fetchWithTimeout(endpoint, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cloudBody(item.message))
+      }, CLOUD_TIMEOUT_MS);
+      internetReachable = true;
+      if (res.ok) {
+        item.phase = 'uploaded';
+        item.cloudStatus = res.status;
+        item.lastError = null;
+        save();
+        log('ok', 'Cloud accepted ' + shortId(id) + ' (HTTP ' + res.status + ').');
+      } else {
+        item.lastError = 'Cloud returned HTTP ' + res.status;
+        save();
+        log('error', 'Cloud rejected ' + shortId(id) + ': HTTP ' + res.status + '.');
+        reportFailure(id, 'cloud HTTP ' + res.status);
+      }
+    } catch (e) {
+      internetReachable = false;
+      item.lastError = 'Network error: ' + describe(e);
+      save();
+      log('warn', 'Upload of ' + shortId(id) + ' failed (' + describe(e) + '). This route has no internet.');
+    }
+  }
+
+  // Best effort: tell the sender why an upload failed so it shows on its screen.
+  function reportFailure(id, reason) {
+    senderRequest('/api/relay-failed/' + encodeURIComponent(id), 'POST', { reason: reason })
+      .catch(function () { /* sender may be unreachable right now; nothing else to do */ });
+  }
+
+  // Step 3: POST /api/ack/{id} back to the sender so it marks the message DELIVERED.
+  async function ackToSender(item) {
+    var id = item.message.id;
+    try {
+      var res = await senderRequest('/api/ack/' + encodeURIComponent(id), 'POST', {
+        id: id,
+        cloudStatus: item.cloudStatus,
+        cloudReceipt: 'helper-browser'
+      });
+      senderReachable = true;
+      if (res.ok || res.status === 404) {
+        delete state.items[id];
+        state.deliveredCount++;
+        save();
+        log('ok', 'Sender confirmed ' + shortId(id) + ' as DELIVERED.');
+      } else if (res.status === 401) {
+        sessionExpired = true;
+        log('error', 'Relay session expired — reload this page while connected to the sender\'s Wi-Fi.');
+      } else {
+        log('warn', 'Sender did not accept confirmation for ' + shortId(id) + ' (HTTP ' + res.status + ').');
+      }
+    } catch (e) {
+      senderReachable = false;
+      log('warn', 'Could not confirm ' + shortId(id) + ' to the sender (' + describe(e) + '). Rejoin its Wi-Fi and tap Retry Relay.');
+    }
+  }
+
+  async function relayCycle(trigger) {
+    if (running) return;
+    running = true;
+    clearTimeout(autoTimer);
+    setBusy(true);
+    try {
+      if (trigger !== 'auto') log('info', 'Relay cycle started (' + trigger + ').');
+      await pullFromSender();
+      var toUpload = itemsIn('fetched');
+      for (var i = 0; i < toUpload.length; i++) await uploadToCloud(toUpload[i]);
+      var toAck = itemsIn('uploaded');
+      for (var j = 0; j < toAck.length; j++) await ackToSender(toAck[j]);
+    } finally {
+      running = false;
+      setBusy(false);
+      render();
+      scheduleAuto();
+    }
+  }
+
+  function scheduleAuto() {
+    clearTimeout(autoTimer);
+    if (sessionExpired) return;
+    if (autoCycles >= MAX_AUTO_CYCLES) {
+      log('info', 'Automatic retries paused. Tap Retry Relay to continue.');
+      return;
+    }
+    autoCycles++;
+    var outstanding = Object.keys(state.items).length;
+    autoTimer = setTimeout(function () { relayCycle('auto'); }, outstanding ? RETRY_BUSY_MS : RETRY_IDLE_MS);
+  }
+
+  function setBusy(busy) {
+    var btn = $('retry');
+    btn.disabled = busy;
+    btn.innerHTML = '';
+    if (busy) {
+      var sp = document.createElement('span');
+      sp.className = 'spinner';
+      btn.appendChild(sp);
+      btn.appendChild(document.createTextNode('Relaying…'));
+    } else {
+      btn.textContent = 'Retry Relay';
+    }
+  }
+
+  function setBanner(kind, text) {
+    var b = $('banner');
+    b.className = 'banner ' + kind;
+    b.textContent = text;
+  }
+
+  function render() {
+    var fetched = itemsIn('fetched');
+    var uploaded = itemsIn('uploaded');
+    var outstanding = fetched.length + uploaded.length;
+
+    $('stat-waiting').textContent = fetched.length;
+    $('stat-uploaded').textContent = uploaded.length;
+    $('stat-done').textContent = state.deliveredCount;
+    $('endpoint').textContent = state.cloudEndpoint || '(not loaded yet)';
+    $('sender-status').textContent = senderReachable === null ? 'checking…' : (senderReachable ? 'connected' : 'not reachable');
+    $('net-status').textContent = internetReachable === null ? 'untested' : (internetReachable ? 'working' : 'no route');
+
+    if (sessionExpired) {
+      setBanner('error', 'The sender restarted its relay. Reload this page while connected to its Wi-Fi.');
+    } else if (fetched.length && internetReachable === false && senderReachable) {
+      setBanner('warn', 'Your phone is routing through the sender\'s Wi-Fi, which has no internet. Turn Wi-Fi OFF (keep this tab open), then tap Retry Relay.');
+    } else if (fetched.length && internetReachable === false) {
+      setBanner('warn', 'No internet on this phone right now. Turn on mobile data, then tap Retry Relay.');
+    } else if (uploaded.length && senderReachable === false) {
+      setBanner('warn', 'Uploaded to the cloud. Rejoin the sender\'s Wi-Fi hotspot and tap Retry Relay to confirm delivery.');
+    } else if (outstanding) {
+      setBanner('info', 'Relaying ' + outstanding + ' message(s)…');
+    } else if (senderReachable === false) {
+      setBanner('error', 'Can\'t reach the sender. Join its Wi-Fi hotspot, then tap Retry Relay.');
+    } else if (state.deliveredCount > 0) {
+      setBanner('ok', 'All messages delivered. Thank you! You can leave this page — it keeps watching for new ones while open.');
+    } else if (senderReachable) {
+      setBanner('info', 'Connected. No messages waiting right now — watching for new ones…');
+    } else {
+      setBanner('info', 'Starting relay…');
+    }
+
+    var list = $('messages');
+    list.innerHTML = '';
+    fetched.concat(uploaded).forEach(function (it) {
+      var m = it.message;
+      var li = document.createElement('li');
+
+      var head = document.createElement('div');
+      head.className = 'msg-head';
+      var title = document.createElement('strong');
+      title.textContent = 'To ' + m.recipientId;
+      var pill = document.createElement('span');
+      pill.className = 'pill ' + it.phase;
+      pill.textContent = it.phase === 'fetched' ? 'Waiting for upload' : 'Uploaded · confirming';
+      head.appendChild(title);
+      head.appendChild(pill);
+      li.appendChild(head);
+
+      var meta = document.createElement('div');
+      meta.className = 'small';
+      meta.textContent = '#' + shortId(m.id) + ' · ' + new Date(m.createdAt).toLocaleString() +
+        ' · ' + (m.encryptedPayload ? m.encryptedPayload.length : 0) + ' bytes encrypted · ' + it.attempts + ' attempt(s)';
+      li.appendChild(meta);
+
+      if (it.lastError) {
+        var err = document.createElement('div');
+        err.className = 'small err';
+        err.textContent = it.lastError;
+        li.appendChild(err);
+      }
+      list.appendChild(li);
+    });
+    $('no-messages').style.display = outstanding ? 'none' : 'block';
+  }
+
+  $('retry').addEventListener('click', function () {
+    autoCycles = 0;
+    relayCycle('manual retry');
+  });
+
+  $('clear').addEventListener('click', function () {
+    if (!confirm('Remove all messages cached on this page? Undelivered messages stay safe on the sender\'s phone.')) return;
+    state = freshState();
+    save();
+    log('info', 'Local cache cleared.');
+    render();
+  });
+
+  window.addEventListener('online', function () { relayCycle('network change'); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') relayCycle('page visible');
+  });
+
+  render();
+  relayCycle('page load');
+})();
+</script>
+</body>
+</html>

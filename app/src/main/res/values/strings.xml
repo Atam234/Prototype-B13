@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZeroInstall Relay</string>
+    <string name="notification_channel_name">Relay hotspot</string>
+    <string name="notification_channel_description">Shown while the relay hotspot and local web server are running</string>
+    <string name="notification_stop">Stop relay</string>
+</resources>
